@@ -66,6 +66,15 @@ exports.approveCashInRequest = async (req, res) => {
         transaction.status = 'approved';
         await transaction.save();
 
+        // Populate the 'from' and 'to' fields with 'name' and 'mobileNumber'
+        const populatedTransaction = await Transaction.findById(transactionId)
+            .populate('from', 'name mobileNumber')
+            .populate('to', 'name mobileNumber');
+
+        if (!populatedTransaction) {
+            return res.status(404).json({ message: 'Transaction not found after populating' });
+        }
+
         // Process the actual balance update in user's account
         const user = await User.findById(transaction.from);
         if (!user) {
@@ -76,8 +85,8 @@ exports.approveCashInRequest = async (req, res) => {
         user.balance += transaction.amount;
         await user.save();
 
-        // Respond with the updated transaction object
-        res.status(200).json({ message: 'Cash-in request approved successfully', transaction });
+        // Respond with the updated and populated transaction object
+        res.status(200).json({ message: 'Cash-in request approved successfully', transaction: populatedTransaction });
     } catch (error) {
         console.error('Error approving cash-in request:', error);
         res.status(500).json({ message: 'Failed to approve cash-in request', error: error.message });
