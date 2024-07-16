@@ -13,12 +13,12 @@ const transactionSchema = new Schema({
     },
     from: {
         type: Schema.Types.ObjectId,
-        ref: 'User',
+        ref: 'User', // Reference to the User model
         required: true,
     },
     to: {
         type: Schema.Types.ObjectId,
-        ref: 'User',
+        ref: 'User', // Reference to the User model
         required: true,
     },
     status: {

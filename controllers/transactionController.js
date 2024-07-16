@@ -1,3 +1,4 @@
+
 const Transaction = require('../models/Transaction');
 const User = require('../models/User');
 
@@ -14,13 +15,13 @@ exports.initiateCashInRequest = async (req, res) => {
         }
 
         // Find the agent by their mobile number
-        const agent = await User.findOne({ mobileNumber: agentNo, role: 'agent' });
+        const agent = await User.findOne({ mobileNumber: agentNo, role: 'agent' }).select('name mobileNumber');
         if (!agent) {
             return res.status(404).json({ message: 'Agent not found' });
         }
 
         // Create a new transaction/request record with pending status
-        const transaction = await Transaction.create({
+        const transaction = new Transaction({
             type: 'cash-in',
             amount,
             from: userId,
@@ -28,8 +29,10 @@ exports.initiateCashInRequest = async (req, res) => {
             status: 'pending', // Status is initially set to pending
         });
 
-        // Populate the 'from' and 'to' fields to include user and agent details
-        await transaction.populate('from').populate('to').execPopulate();
+        await transaction.save();
+
+        // Populate the 'from' and 'to' fields to include user and agent details without _id
+        await Transaction.populate(transaction, { path: 'from to', select: 'name mobileNumber -_id' });
 
         // Optionally, notify the agent or update user interface accordingly
         res.status(201).json({ message: 'Cash-in request initiated successfully', transaction });
@@ -38,6 +41,7 @@ exports.initiateCashInRequest = async (req, res) => {
         res.status(500).json({ message: 'Failed to initiate cash-in request', error: error.message });
     }
 };
+
 
 // Controller function for agent to approve a cash-in request
 exports.approveCashInRequest = async (req, res) => {
