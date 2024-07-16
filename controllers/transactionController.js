@@ -2,6 +2,17 @@
 const Transaction = require('../models/Transaction');
 const User = require('../models/User');
 
+// Controller function to get all transactions
+exports.getAllTransactions = async (req, res) => {
+    try {
+        const transactions = await Transaction.find();
+        res.status(200).json(transactions);
+    } catch (error) {
+        console.error('Error fetching transactions:', error);
+        res.status(500).json({ message: 'Failed to fetch transactions', error: error.message });
+    }
+};
+
 // Controller function to initiate a cash-in request
 exports.initiateCashInRequest = async (req, res) => {
     const { agentNo, amount } = req.body;
@@ -90,5 +101,39 @@ exports.approveCashInRequest = async (req, res) => {
     } catch (error) {
         console.error('Error approving cash-in request:', error);
         res.status(500).json({ message: 'Failed to approve cash-in request', error: error.message });
+    }
+};
+
+// Controller function to get all transactions by a user
+exports.getAllTransactionsByUser = async (req, res) => {
+    const userId = req.user.id; // Assuming req.user contains user details including ID
+
+    try {
+        const transactions = await Transaction.find({ $or: [{ from: userId }, { to: userId }] })
+            .populate('from', 'name mobileNumber')
+            .populate('to', 'name mobileNumber')
+            .sort({ createdAt: -1 }); // Optionally, sort by createdAt in descending order
+
+        res.status(200).json({ transactions });
+    } catch (error) {
+        console.error('Error fetching transactions:', error);
+        res.status(500).json({ message: 'Failed to fetch transactions', error: error.message });
+    }
+};
+
+// Controller function to get all cash-in requests for an agent
+exports.getAllCashInRequestsForAgent = async (req, res) => {
+    const agentId = req.user.id; // Assuming req.user contains agent details including ID
+
+    try {
+        const cashInRequests = await Transaction.find({ to: agentId, type: 'cash-in', status: 'pending' })
+            .populate('from', 'name mobileNumber')
+            .populate('to', 'name mobileNumber')
+            .sort({ createdAt: -1 }); // Optionally, sort by createdAt in descending order
+
+        res.status(200).json({ cashInRequests });
+    } catch (error) {
+        console.error('Error fetching cash-in requests:', error);
+        res.status(500).json({ message: 'Failed to fetch cash-in requests', error: error.message });
     }
 };
