@@ -1,4 +1,4 @@
-
+const mongoose = require('mongoose');
 const Transaction = require('../models/Transaction');
 const User = require('../models/User');
 
@@ -15,23 +15,32 @@ exports.getAllTransactions = async (req, res) => {
 
 // Controller function to initiate a cash-in request
 exports.initiateCashInRequest = async (req, res) => {
-    const { agentNo, amount } = req.body;
+    const { agentNo, amount, pin } = req.body;
     const userId = req.user.id; // Assuming req.user contains user details including ID
 
     try {
-        // Check if the user is an admin or agent
+        // Check if the user is a regular user
         const user = await User.findById(userId);
         if (!user || user.role !== 'user') {
             return res.status(403).json({ message: 'Only users can initiate cash-in requests' });
         }
 
+        // Convert the PIN to a string before comparison
+        const pinString = String(pin);
+
+        // Verify the user's PIN
+        const isMatch = await user.comparePIN(pinString);
+        if (!isMatch) {
+            return res.status(403).json({ message: 'Invalid PIN' });
+        }
+
         // Find the agent by their mobile number
-        const agent = await User.findOne({ mobileNumber: agentNo, role: 'agent' }).select('name mobileNumber');
+        const agent = await User.findOne({ mobileNumber: agentNo, role: 'agent' });
         if (!agent) {
             return res.status(404).json({ message: 'Agent not found' });
         }
 
-        // Create a new transaction/request record with pending status
+        // Create a new transaction record with pending status
         const transaction = new Transaction({
             type: 'cash-in',
             amount,
@@ -42,10 +51,13 @@ exports.initiateCashInRequest = async (req, res) => {
 
         await transaction.save();
 
-        // Populate the 'from' and 'to' fields to include user and agent details without _id
-        await Transaction.populate(transaction, { path: 'from to', select: 'name mobileNumber -_id' });
+        // Populate the 'from' and 'to' fields to include user and agent details
+        await transaction.populate([
+            { path: 'from', select: 'name mobileNumber' },
+            { path: 'to', select: 'name mobileNumber' }
+        ]);
 
-        // Optionally, notify the agent or update user interface accordingly
+        // Respond with the transaction object
         res.status(201).json({ message: 'Cash-in request initiated successfully', transaction });
     } catch (error) {
         console.error('Error initiating cash-in request:', error);
@@ -53,10 +65,11 @@ exports.initiateCashInRequest = async (req, res) => {
     }
 };
 
-
 // Controller function for agent to approve a cash-in request
 exports.approveCashInRequest = async (req, res) => {
-    const { transactionId } = req.params;
+    const {transactionId} = req.params;
+    const { pin } = req.body;
+    const agentId = req.user.id; // Assuming req.user contains agent details including ID
 
     try {
         // Find the transaction/request by ID
@@ -67,42 +80,57 @@ exports.approveCashInRequest = async (req, res) => {
         }
 
         // Ensure only the assigned agent can approve this transaction
-        // For simplicity, assume req.user contains agent details including ID
-        const agentId = req.user.id;
         if (transaction.to.toString() !== agentId.toString()) {
             return res.status(403).json({ message: 'Unauthorized to approve this transaction' });
         }
+
+        // Find the agent by ID
+        const agent = await User.findById(agentId);
+        if (!agent) {
+            return res.status(404).json({ message: 'Agent not found' });
+        }
+
+        // Verify the agent's PIN
+        const isMatch = await agent.comparePIN(String(pin));
+        if (!isMatch) {
+            return res.status(403).json({ message: 'Invalid PIN' });
+        }
+
+        // Check if the agent has sufficient balance
+        if (agent.balance < transaction.amount) {
+            return res.status(400).json({ message: 'Agent has insufficient balance' });
+        }
+
+        // Deduct the amount from the agent's balance
+        agent.balance -= transaction.amount;
+        await agent.save();
+
+        // Add the amount to the user's balance
+        const user = await User.findById(transaction.from);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+        user.balance += transaction.amount;
+        await user.save();
 
         // Update transaction status to approved
         transaction.status = 'approved';
         await transaction.save();
 
-        // Populate the 'from' and 'to' fields with 'name' and 'mobileNumber'
-        const populatedTransaction = await Transaction.findById(transactionId)
-            .populate('from', 'name mobileNumber')
-            .populate('to', 'name mobileNumber');
+        // Populate the 'from' and 'to' fields to include user and agent details
+        await transaction.populate([
+            { path: 'to', select: 'name mobileNumber balance -_id' },
+            { path: 'from', select: 'name mobileNumber' }
+        ]);
 
-        if (!populatedTransaction) {
-            return res.status(404).json({ message: 'Transaction not found after populating' });
-        }
-
-        // Process the actual balance update in user's account
-        const user = await User.findById(transaction.from);
-        if (!user) {
-            return res.status(404).json({ message: 'User not found' });
-        }
-
-        // Add the transaction amount to the user's balance
-        user.balance += transaction.amount;
-        await user.save();
-
-        // Respond with the updated and populated transaction object
-        res.status(200).json({ message: 'Cash-in request approved successfully', transaction: populatedTransaction });
+        // Respond with the updated transaction object
+        res.status(200).json({ message: 'Cash-in request approved successfully', transaction });
     } catch (error) {
         console.error('Error approving cash-in request:', error);
         res.status(500).json({ message: 'Failed to approve cash-in request', error: error.message });
     }
 };
+
 
 // Controller function to get all transactions by a user
 exports.getAllTransactionsByUser = async (req, res) => {
@@ -137,3 +165,81 @@ exports.getAllCashInRequestsForAgent = async (req, res) => {
         res.status(500).json({ message: 'Failed to fetch cash-in requests', error: error.message });
     }
 };
+
+// Controller function to initiate a cash-out request
+exports.initiateCashOutRequest = async (req, res) => {
+    const { agentMobileNo, amount, pin } = req.body;
+    const userId = req.user.id; // Assuming req.user contains user details including ID
+
+    try {
+        // Check if the request is made by a user
+        const user = await User.findById(userId);
+        if (!user || user.role !== 'user') {
+            return res.status(403).json({ message: 'Only users can initiate cash-out requests' });
+        }
+
+        // Verify the user's PIN
+        const isMatch = await user.comparePIN(pin);
+        if (!isMatch) {
+            return res.status(403).json({ message: 'Invalid PIN' });
+        }
+
+        // Calculate the fee (1.5% of the transaction amount)
+        const fee = amount * 0.015;
+        const totalAmount = amount + fee;
+
+        // Check if the user has sufficient balance
+        if (user.balance < totalAmount) {
+            return res.status(400).json({ message: 'Insufficient balance' });
+        }
+
+        // Find the agent by their mobile number
+        const agent = await User.findOne({ mobileNumber: agentMobileNo, role: 'agent' });
+        if (!agent) {
+            return res.status(404).json({ message: 'Agent not found' });
+        }
+
+        // Create a new transaction record
+        const transaction = new Transaction({
+            type: 'cash-out',
+            amount,
+            fee,
+            from: user._id, // Assign the user's ObjectId directly
+            to: agent._id, // Assign the agent's ObjectId directly
+            status: 'pending', // Status is initially set to pending
+        });
+
+        // Save the transaction
+        await transaction.save();
+
+        // Adjust balances
+        user.balance -= totalAmount;
+        await user.save();
+
+        agent.balance += totalAmount;
+        await agent.save();
+
+        // Update transaction status to 'approved'
+        transaction.status = 'approved';
+        await transaction.save();
+
+        // Populate the 'from' and 'to' fields to include user and agent details
+        await transaction.populate([
+            { path: 'from', select: 'name mobileNumber balance' },
+            { path: 'to', select: 'name mobileNumber' }
+        ]);
+
+        // Respond with the updated transaction object
+        res.status(201).json({ message: 'Cash-out request completed successfully', transaction });
+    } catch (error) {
+        console.error('Error initiating cash-out request:', error);
+        res.status(500).json({ message: 'Failed to complete cash-out request', error: error.message });
+    }
+};
+
+
+
+
+
+
+
