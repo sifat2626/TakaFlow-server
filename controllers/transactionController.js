@@ -237,6 +237,92 @@ exports.initiateCashOutRequest = async (req, res) => {
     }
 };
 
+exports.sendMoney = async (req, res) => {
+    const { recipientNum, amount, pin } = req.body;
+    const senderId = req.user.id; // Assuming req.user contains sender details including ID
+
+    try {
+        // Fetch sender details
+        const sender = await User.findById(senderId);
+        if (!sender) {
+            return res.status(404).json({ message: 'Sender not found' });
+        }
+
+        // Validate transaction amount (minimum 50 taka)
+        if (amount < 50) {
+            return res.status(400).json({ message: 'Minimum transaction amount is 50 taka' });
+        }
+
+        // Calculate fee for transactions over 100 taka
+        let fee = 0;
+        if (amount > 100) {
+            fee = 5;
+        }
+
+        // Check sender's balance
+        if (sender.balance < amount + fee) {
+            return res.status(400).json({ message: 'Insufficient balance' });
+        }
+
+        // Find recipient by mobile number
+        const recipient = await User.findOne({ mobileNumber: recipientNum });
+        if (!recipient) {
+            return res.status(404).json({ message: 'Recipient not found' });
+        }
+
+        // Create new transaction
+        const transaction = new Transaction({
+            type: 'send-money',
+            amount,
+            fee,
+            from: sender._id,
+            to: recipient._id,
+            status: 'approved', // Assuming the transaction is completed directly
+        });
+
+        // Save transaction
+        await transaction.save();
+
+        // Update sender's balance
+        sender.balance -= (amount + fee);
+        await sender.save();
+
+        // Update recipient's balance
+        recipient.balance += amount;
+        await recipient.save();
+
+        // Populate sender and recipient fields in transaction
+        await Transaction.populate(transaction, { path: 'from to' });
+
+        // Respond with transaction details
+        res.status(201).json({
+            message: 'Money sent successfully',
+            transaction: {
+                _id: transaction._id,
+                type: transaction.type,
+                amount: transaction.amount,
+                fee: transaction.fee,
+                status: transaction.status,
+                createdAt: transaction.createdAt,
+                from: {
+                    _id: sender._id,
+                    name: sender.name,
+                    mobileNumber: sender.mobileNumber,
+                    balance: sender.balance
+                },
+                to: {
+                    _id: recipient._id,
+                    name: recipient.name,
+                    mobileNumber: recipient.mobileNumber,
+                }
+            }
+        });
+    } catch (error) {
+        console.error('Error sending money:', error);
+        res.status(500).json({ message: 'Failed to send money', error: error.message });
+    }
+};
+
 
 
 

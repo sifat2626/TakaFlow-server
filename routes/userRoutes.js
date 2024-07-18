@@ -24,4 +24,7 @@ router.get('/users', verifyToken, isAdmin, userController.getAllUsers);
 // Admin Update User Role
 router.put('/update-role', verifyToken, isAdmin, userController.updateUserRole);
 
+router.get('/balance', verifyToken, userController.checkBalance);
+router.get('/profile', verifyToken, userController.getUserData);
+
 module.exports = router;

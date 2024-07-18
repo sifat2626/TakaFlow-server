@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const transactionController = require('../controllers/transactionController');
-const { verifyToken, isAdmin, isUser, isAgent } = require('../middlewares/authMiddleware');
+const { verifyToken, isAdmin, isUser, isAgent, verifyPIN} = require('../middlewares/authMiddleware');
 
 // Route to get all transactions
 router.get('/transactions', verifyToken, transactionController.getAllTransactions);
@@ -20,5 +20,8 @@ router.put('/cash-in/:transactionId/approve', verifyToken, isAgent, transactionC
 
 // Route to initiate a cash-out request by an agent
 router.post('/cash-out', verifyToken, transactionController.initiateCashOutRequest);
+
+// Route to send money
+router.post('/send-money', verifyToken, verifyPIN, transactionController.sendMoney);
 
 module.exports = router;

@@ -4,7 +4,7 @@ const Schema = mongoose.Schema;
 const transactionSchema = new Schema({
     type: {
         type: String,
-        enum: ['send', 'cash-out', 'cash-in', 'fee', 'bonus'],
+        enum: ['send-money', 'cash-out', 'cash-in', 'fee', 'bonus'],
         required: true,
     },
     amount: {

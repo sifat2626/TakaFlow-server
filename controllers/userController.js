@@ -34,7 +34,13 @@ exports.registerUser = async (req, res) => {
             { expiresIn: process.env.EXPIRES_IN }
         );
 
-        res.cookie('token', token, { httpOnly: true }).status(201).json({
+        console.log(token)
+
+        res.cookie('token', token, {
+            httpOnly:true,
+            secure: process.env.NODE_ENV==='production',
+            sameSite: process.env.NODE_ENV==='production' ? 'none':'strict',
+        }).status(201).json({
             message: 'Registration successful',
             user: {
                 id: user._id,
@@ -87,7 +93,11 @@ exports.loginUser = async (req, res) => {
         );
 
         // Send the token as an HTTP-only cookie
-        res.cookie('token', token, { httpOnly: true }).status(200).json({
+        res.cookie('token', token, {
+            httpOnly:true,
+            secure: process.env.NODE_ENV==='production',
+            sameSite: process.env.NODE_ENV==='production' ? 'none':'strict',
+        }).status(200).json({
             message: 'Login successful',
             user: {
                 id: user._id,
@@ -175,6 +185,52 @@ exports.updateUserRole = async (req, res) => {
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Server error' });
+    }
+};
+
+exports.checkBalance = async (req, res) => {
+    const userId = req.user.id; // Assuming req.user contains user details including ID
+
+    try {
+        // Fetch user details including balance
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        // Respond with user's balance
+        res.status(200).json({ balance: user.balance });
+    } catch (error) {
+        console.error('Error fetching user balance:', error);
+        res.status(500).json({ message: 'Failed to fetch balance', error: error.message });
+    }
+};
+
+exports.getUserData = async (req, res) => {
+    const userId = req.user.id; // Assuming req.user contains user details including ID
+
+    try {
+        // Fetch user details
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        // Respond with user's data
+        res.status(200).json({
+            _id: user._id,
+            name: user.name,
+            mobileNumber: user.mobileNumber,
+            email: user.email,
+            role: user.role,
+            status: user.status,
+            balance: user.balance,
+            createdAt: user.createdAt,
+            updatedAt: user.updatedAt
+        });
+    } catch (error) {
+        console.error('Error fetching user data:', error);
+        res.status(500).json({ message: 'Failed to fetch user data', error: error.message });
     }
 };
 

@@ -68,3 +68,21 @@ exports.isUser = async (req, res, next) => {
         res.status(500).json({ error: 'An error occurred while checking user privileges' });
     }
 };
+
+exports.verifyPIN = async (req, res, next) => {
+    const { pin } = req.body;
+    const userId = req.user.id; // Assuming req.user contains user details including PIN
+
+    try {
+        const user = await User.findById(userId)
+        console.log(pin)
+        const isMatch = await user.comparePIN(String(pin));
+        if (!isMatch) {
+            return res.status(403).json({ message: 'Invalid PIN' });
+        }
+        next(); // Continue to the next middleware or route handler
+    } catch (error) {
+        console.error('Error verifying PIN:', error);
+        res.status(500).json({ message: 'Failed to verify PIN', error: error.message });
+    }
+};
